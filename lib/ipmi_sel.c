@@ -72,6 +72,13 @@ struct ipmi_sel_oem_msg_rec {
 #define	MAX_CARDNO_STR	32	/* Max Size of Card number string */
 #define	MAX_DIMM_STR	32	/* Max Size of DIMM string */
 #define	MAX_CARD_STR	32	/* Max Size of Card string */
+
+// Definiation for the Decoding the SEL OEM Bytes for GIGABYTE Platforms
+
+#define	OEM_SENSOR_TYPE  	0xC	/* Check the sensor type for Memory */
+#define	OEM_EVENT_DATA		0x20	/* Check the event data value */
+#define	OEM_AND_EVENT_DATA	0x30	/* inital event data number is 0xA0 or 0xA1 */
+
 /*
  * Reads values found in message translation file.  XX is a wildcard, R means reserved.
  * Returns -1 for XX, -2 for R, -3 for non-hex (string), or positive integer from a hex value.
@@ -1772,6 +1779,9 @@ ipmi_sel_print_std_entry(struct ipmi_intf * intf, struct sel_event_record * evt)
 	char * description;
 	struct sdr_record_list * sdr = NULL;
 	int data_count;
+	char oem_channel_name[26] = {'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X'};
+	int oem_channal = 0;
+	int oem_dimm = 0;
 
 	if (sel_extended && (evt->record_type < 0xc0))
 		sdr = ipmi_sdr_find_sdr_bynumtype(intf, evt->sel_type.standard_type.gen_id, evt->sel_type.standard_type.sensor_num, evt->sel_type.standard_type.sensor_type);
@@ -2005,6 +2015,175 @@ ipmi_sel_print_std_entry(struct ipmi_intf * intf, struct sel_event_record * evt)
 			printf("CPU %d DIMM %d",
 			       evt->sel_type.standard_type.event_data[2] & 0x0f,
 			       (evt->sel_type.standard_type.event_data[2] & 0xf0) >> 4);
+		}
+		/* UCE/CE Channel/DIMM
+		 * Sensor-Specific Discrete
+		 */
+		if (print_sensor && evt->sel_type.standard_type.sensor_type == OEM_SENSOR_TYPE 
+		&& evt->sel_type.standard_type.sensor_num == 0x08 
+		&& (evt->sel_type.standard_type.event_data[0] & OEM_AND_EVENT_DATA) == OEM_EVENT_DATA) {
+			/* break down memory ECC reporting if we can */
+			if (csv_output)
+				printf(",");
+			else
+				printf(" | ");
+			switch (ipmi_get_oem(intf)) {
+				case IPMI_OEM_GIGABYTE:
+					oem_channal = (((evt->sel_type.standard_type.event_data[2] & 0xF0) >> 4) | ((evt->sel_type.standard_type.event_data[2] & 0x08) << 1));
+					oem_dimm = (evt->sel_type.standard_type.event_data[2] & 0x07);
+					printf("DIMM_%c%x", oem_channel_name[oem_channal],oem_dimm & 0x03);
+					break;
+				default:
+					printf("CPU %d DIMM %d",evt->sel_type.standard_type.event_data[2] & 0x0f,(evt->sel_type.standard_type.event_data[2] & 0xf0) >> 4);
+					break;
+			}
+		}
+		/* UCE/CE SubChannel/Rank/SubRank
+		 * Sensor-Specific Discrete
+		 */
+		if (print_sensor && evt->sel_type.standard_type.sensor_type == OEM_SENSOR_TYPE 
+		&& evt->sel_type.standard_type.sensor_num == 0x81 
+		&& (evt->sel_type.standard_type.event_data[0] & OEM_AND_EVENT_DATA) == OEM_EVENT_DATA) {
+			/* break down memory ECC reporting if we can */
+			if (csv_output)
+				printf(",");
+			else
+				printf(" | ");
+			switch (ipmi_get_oem(intf)) {
+				case IPMI_OEM_GIGABYTE:								
+					oem_channal = ((evt->sel_type.standard_type.event_data[2] & 0xF8) >> 3);
+					oem_dimm = (evt->sel_type.standard_type.event_data[2] & 0x07);
+					if(evt->sel_type.standard_type.event_data[1] == 0xFF)
+						printf("Rank %c SubRank %d", oem_dimm ,oem_channal);
+					else
+						printf("SubChannel %x Rank %d SubRank %d",evt->sel_type.standard_type.event_data[1],oem_dimm,oem_channal);
+					break;
+				default:
+					printf("CPU %d DIMM %d",evt->sel_type.standard_type.event_data[2] & 0x0f,(evt->sel_type.standard_type.event_data[2] & 0xf0) >> 4);
+					break;
+			}
+		}
+		/* UCE/CE Bank/BankGroup
+		 * Sensor-Specific Discrete
+		 */
+		if (print_sensor && evt->sel_type.standard_type.sensor_type == OEM_SENSOR_TYPE 
+		&& evt->sel_type.standard_type.sensor_num == 0x82 
+		&& (evt->sel_type.standard_type.event_data[0] & OEM_AND_EVENT_DATA) == OEM_EVENT_DATA) {
+			/* break down memory ECC reporting if we can */
+			if (csv_output)
+				printf(",");
+			else
+				printf(" | ");
+			switch (ipmi_get_oem(intf)) {
+				case IPMI_OEM_GIGABYTE:								
+					oem_channal = (evt->sel_type.standard_type.event_data[1] & 0x03 );
+					oem_dimm = ((evt->sel_type.standard_type.event_data[1] & 0x1C) >> 2);
+					printf("BankGroup 0x%x BankAddress 0x%x ",oem_dimm,oem_channal);
+					break;
+				default:
+					printf("CPU %d DIMM %d",evt->sel_type.standard_type.event_data[2] & 0x0f,(evt->sel_type.standard_type.event_data[2] & 0xf0) >> 4);
+					break;
+			}
+		}
+		/* UCE/CE Raw[16:31]
+		 * Sensor-Specific Discrete
+		 */
+		if (print_sensor && evt->sel_type.standard_type.sensor_type == OEM_SENSOR_TYPE 
+		&& evt->sel_type.standard_type.sensor_num == 0x83 
+		&& (evt->sel_type.standard_type.event_data[0] & OEM_AND_EVENT_DATA) == OEM_EVENT_DATA) {
+			/* break down memory ECC reporting if we can */
+			if (csv_output)
+				printf(",");
+			else
+				printf(" | ");
+			switch (ipmi_get_oem(intf)) {
+				case IPMI_OEM_GIGABYTE:								
+					printf("Row(high word) 0x%x%x",evt->sel_type.standard_type.event_data[1],evt->sel_type.standard_type.event_data[2]);
+					break;
+				default:
+					printf("CPU %d DIMM %d",evt->sel_type.standard_type.event_data[2] & 0x0f,(evt->sel_type.standard_type.event_data[2] & 0xf0) >> 4);
+					break;
+			}
+		}	
+		/* UCE/CE Raw[0:15]
+		 * Sensor-Specific Discrete
+		 */
+		if (print_sensor && evt->sel_type.standard_type.sensor_type == OEM_SENSOR_TYPE 
+		&& evt->sel_type.standard_type.sensor_num == 0x84 
+		&& (evt->sel_type.standard_type.event_data[0] & OEM_AND_EVENT_DATA) == OEM_EVENT_DATA) {
+			/* break down memory ECC reporting if we can */
+			if (csv_output)
+				printf(",");
+			else
+				printf(" | ");
+			switch (ipmi_get_oem(intf)) {
+				case IPMI_OEM_GIGABYTE:								
+					printf("Row(low word) 0x%x%x",evt->sel_type.standard_type.event_data[1],evt->sel_type.standard_type.event_data[2]);
+					break;
+				default:
+					printf("CPU %d DIMM %d",evt->sel_type.standard_type.event_data[2] & 0x0f,(evt->sel_type.standard_type.event_data[2] & 0xf0) >> 4);
+					break;
+			}
+		}		
+		/* UCE/CE Colume[16:31]
+		 * Sensor-Specific Discrete
+		 */
+		if (print_sensor && evt->sel_type.standard_type.sensor_type == OEM_SENSOR_TYPE 
+		&& evt->sel_type.standard_type.sensor_num == 0x87 
+		&& (evt->sel_type.standard_type.event_data[0] & OEM_AND_EVENT_DATA) == OEM_EVENT_DATA) {
+			/* break down memory ECC reporting if we can */
+			if (csv_output)
+				printf(",");
+			else
+				printf(" | ");
+			switch (ipmi_get_oem(intf)) {
+				case IPMI_OEM_GIGABYTE:								
+					printf("Column(high word) 0x%x%x",evt->sel_type.standard_type.event_data[1],evt->sel_type.standard_type.event_data[2]);
+					break;
+				default:
+					printf("CPU %d DIMM %d",evt->sel_type.standard_type.event_data[2] & 0x0f,(evt->sel_type.standard_type.event_data[2] & 0xf0) >> 4);
+					break;
+			}
+		}	
+		/* UCE/CE Colume[0:15]
+		 * Sensor-Specific Discrete
+		 */
+		if (print_sensor && evt->sel_type.standard_type.sensor_type == OEM_SENSOR_TYPE 
+		&& evt->sel_type.standard_type.sensor_num == 0x88 
+		&& (evt->sel_type.standard_type.event_data[0] & OEM_AND_EVENT_DATA) == OEM_EVENT_DATA) {
+			/* break down memory ECC reporting if we can */
+			if (csv_output)
+				printf(",");
+			else
+				printf(" | ");
+			switch (ipmi_get_oem(intf)) {
+				case IPMI_OEM_GIGABYTE:								
+					printf("Column(low word) 0x%x%x",evt->sel_type.standard_type.event_data[1],evt->sel_type.standard_type.event_data[2]);
+					break;
+				default:
+					printf("CPU %d DIMM %d",evt->sel_type.standard_type.event_data[2] & 0x0f,(evt->sel_type.standard_type.event_data[2] & 0xf0) >> 4);
+					break;
+			}
+		}	
+		/* UCE/CE DQ
+		 * Sensor-Specific Discrete
+		 */
+		if (print_sensor && evt->sel_type.standard_type.sensor_type == OEM_SENSOR_TYPE 
+		&& evt->sel_type.standard_type.sensor_num == 0x89 
+		&& (evt->sel_type.standard_type.event_data[0] & OEM_AND_EVENT_DATA) == OEM_EVENT_DATA) {
+			/* break down memory ECC reporting if we can */
+			if (csv_output)
+				printf(",");
+			else
+				printf(" | ");
+			switch (ipmi_get_oem(intf)) {
+				case IPMI_OEM_GIGABYTE:								
+					printf("DQ 0x%x ",evt->sel_type.standard_type.event_data[2]);
+					break;
+				default:
+					printf("CPU %d DIMM %d",evt->sel_type.standard_type.event_data[2] & 0x0f,(evt->sel_type.standard_type.event_data[2] & 0xf0) >> 4);
+					break;
+			}
 		}
 	}
 

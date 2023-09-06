@@ -293,6 +293,8 @@ typedef enum IPMI_OEM {
      IPMI_OEM_PICMG      = 12634,
      IPMI_OEM_RARITAN    = 13742,
      IPMI_OEM_KONTRON    = 15000,
+     /* 15370 for GIGA-BYTE */
+     IPMI_OEM_GIGABYTE   = 15370,
      IPMI_OEM_PPS        = 16394,
      /* 20301 for [IBM eServer X] */
      IPMI_OEM_IBM_20301  = 20301,
